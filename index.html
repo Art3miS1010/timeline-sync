@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>扯鈴燈光音樂編排工作站 V2</title>
+    <title>扯鈴燈光音樂編排工作站 V2.1</title>
     <style>
         body { font-family: 'PingFang TC', sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; user-select: none; }
         button { background: #00adb5; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 5px; cursor: pointer; margin: 5px; transition: 0.2s; }
@@ -15,15 +15,25 @@
         .status { text-align: center; color: #eee; font-size: 14px; margin-bottom: 15px; }
         .time-display { font-size: 40px; font-weight: bold; color: #222831; background: #eeeeee; padding: 10px; border-radius: 5px; margin: 15px 0; text-align: center; font-family: monospace; }
         
-        /* 核心長按按鈕：極大化方便觸控 */
+        /* 核心長按控制打擊墊：已縮小至原先的 60% */
         .pad-zone { text-align: center; margin: 25px 0; }
-        #captureBtn { background: #ff9f43; font-size: 22px; font-weight: bold; padding: 30px 60px; border-radius: 15px; width: 80%; max-width: 400px; box-shadow: 0 6px 15px rgba(255,159,67,0.4); touch-action: none; }
+        #captureBtn { 
+            background: #ff9f43; 
+            font-size: 16px;          /* 縮小字體 */
+            font-weight: bold; 
+            padding: 18px 36px;       /* 縮小上下左右內襯高度 (原 30px 60px 的 60%) */
+            border-radius: 10px; 
+            width: 50%;               /* 縮小寬度佔比 */
+            max-width: 240px; 
+            box-shadow: 0 4px 10px rgba(255,159,67,0.4); 
+            touch-action: none; 
+        }
         #captureBtn:active { background: #ee5253; transform: scale(0.98); box-shadow: 0 2px 5px rgba(255,159,67,0.2); }
 
         .editor-zone { background: #393e46; padding: 15px; border-radius: 5px; margin-top: 20px; }
         .script-list { max-height: 250px; overflow-y: auto; margin-top: 10px; background: #1a1e24; padding: 10px; border-radius: 5px; }
         .script-item { display: flex; align-items: center; justify-content: space-between; background: #2a3038; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; border-left: 4px solid #00adb5; }
-        .script-item input { background: #121212; color: white; border: 1px solid #555; padding: 5px; border-radius: 3px; width: 60px; text-align: center; }
+        .script-item input { background: #121212; color: white; border: 1px solid #555; padding: 5px; border-radius: 3px; width: 65px; text-align: center; }
         
         .log-box { background: #1a1e24; padding: 10px; border-radius: 5px; height: 100px; overflow-y: auto; font-size: 12px; font-family: monospace; margin-top: 15px; color: #a6b1e1; }
     </style>
@@ -31,7 +41,7 @@
 <body>
 
 <div class="container">
-    <h2>扯鈴燈光音樂編排工作站 V2 🎬</h2>
+    <h2>扯鈴燈光音樂編排工作站 🎬</h2>
     <div id="status" class="status">狀態：尚未連接 ESP32</div>
     <div style="text-align: center;"><button id="connectBtn">🔗 連接 ESP32 藍牙</button></div>
     
@@ -44,7 +54,7 @@
     <div id="timeDisplay" class="time-display">00:00.00</div>
     
     <div class="pad-zone">
-        <button id="captureBtn">按住：亮 (紀錄) / 放開：滅 (紀錄)</button>
+        <button id="captureBtn">按住：亮 / 放開：滅</button>
     </div>
 
     <div class="editor-zone">
@@ -72,14 +82,14 @@ let bluetoothDevice = null;
 let txCharacteristic = null;
 
 // ----------------- 劇本儲存庫 -----------------
-// 1. 這是寫死在底層的原廠劇本，永遠不會變
+// 寫死在底層的原廠測試劇本
 const DEFAULT_SCRIPT = [
     { time: 3.0,  brightness: 255, executed: false },
     { time: 6.5,  brightness: 50,  executed: false },
     { time: 10.0, brightness: 0,   executed: false }
 ];
 
-// 2. 這是目前畫面上正在跑、允許你自由亂按的動態劇本（深拷貝原廠劇本）
+// 目前畫面上允許動態增刪的活動劇本
 let lightScript = JSON.parse(JSON.stringify(DEFAULT_SCRIPT));
 
 // UI 元件
@@ -130,13 +140,14 @@ window.updateNodeTime = (index, value) => { lightScript[index].time = parseFloat
 window.updateNodeBrightness = (index, value) => { lightScript[index].brightness = parseInt(value); };
 window.deleteNode = (index) => { lightScript.splice(index, 1); renderScript(); };
 
-// 【重置功能】功能 1：還原成原廠設定
+// 還原為原廠劇本
 resetDefaultBtn.addEventListener('click', () => {
     lightScript = JSON.parse(JSON.stringify(DEFAULT_SCRIPT));
     renderScript();
-    log("🔄 已還原為原始燈光劇本設定（清除所有自訂按下點）");
+    log("🔄 已還原為原始燈光劇本設定（清除所有自訂紀錄點）");
 });
 
+// 清空全部
 clearAllBtn.addEventListener('click', () => { lightScript = []; renderScript(); log("🗑️ 已清空所有編排點"); });
 
 // 💾 匯出劇本
@@ -150,15 +161,36 @@ exportBtn.addEventListener('click', () => {
     alert("劇本程式碼已成功複製到剪貼簿！");
 });
 
+// ----------------- 🎵 音樂檔案載入 (平板與手機相容加強版) -----------------
+audioFile.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        // 清理上一次的音訊記憶體暫存
+        if (myAudio.src) {
+            URL.revokeObjectURL(myAudio.src);
+        }
+        
+        const url = URL.createObjectURL(file);
+        myAudio.src = url;
+        myAudio.style.display = "block";
+        
+        // 【核心修正】強迫瀏覽器核心重新解碼、加載音樂軌
+        myAudio.load(); 
+        
+        log(`🎵 成功載入音樂: ${file.name}，請點擊音樂播放器的 Play 按鈕。`);
+        resetScriptStates();
+    }
+});
+
 // ----------------- 🎯 核心：長按與放開的即時控制與記錄 -----------------
 function handlePressStart(e) {
-    e.preventDefault(); // 防止手機瀏覽器放大或當成選取文字
+    e.preventDefault(); 
     const currentTime = myAudio.currentTime;
     
     log(`🎯 按下 -> 現場立刻全亮 (記錄時間: ${currentTime.toFixed(2)}s)`);
-    sendBrightness(255); // 1. 現場立刻亮
+    sendBrightness(255); 
     
-    lightScript.push({ time: currentTime, brightness: 255, executed: false }); // 2. 寫入劇本
+    lightScript.push({ time: currentTime, brightness: 255, executed: false }); 
     renderScript();
 }
 
@@ -167,13 +199,13 @@ function handlePressEnd(e) {
     const currentTime = myAudio.currentTime;
     
     log(`⚪ 放開 -> 現場立刻熄滅 (記錄時間: ${currentTime.toFixed(2)}s)`);
-    sendBrightness(0); // 1. 現場立刻滅
+    sendBrightness(0); 
     
-    lightScript.push({ time: currentTime, brightness: 0, executed: false }); // 2. 寫入劇本
+    lightScript.push({ time: currentTime, brightness: 0, executed: false }); 
     renderScript();
 }
 
-// 同時支援電腦滑鼠與手機/平板觸控
+// 同時監聽滑鼠與觸控面板
 captureBtn.addEventListener('mousedown', handlePressStart);
 captureBtn.addEventListener('mouseup', handlePressEnd);
 captureBtn.addEventListener('touchstart', handlePressStart);
@@ -236,7 +268,6 @@ async function sendBrightness(value) {
     }
 }
 
+// 初始執行
 renderScript();
 </script>
-</body>
-</html>
