@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>扯鈴燈光音樂編排工作站 V3</title>
+    <title>扯鈴燈光編排工作站 V5</title>
     <style>
         body { font-family: 'PingFang TC', sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; user-select: none; }
         button { background: #00adb5; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 5px; cursor: pointer; margin: 5px; transition: 0.2s; }
@@ -11,66 +11,107 @@
         button.danger { background: #ff4d4d; }
         button.danger:hover { background: #cc3333; }
         button.save-slot { background: #6c5ce7; }
-        button.save-slot:hover { background: #5b4cc4; }
         
         .container { max-width: 650px; margin: 0 auto; background: #222831; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); text-align: left; }
         h2, h3 { text-align: center; color: #00adb5; margin-block: 10px; }
         .status { text-align: center; color: #eee; font-size: 14px; margin-bottom: 15px; }
         .time-display { font-size: 40px; font-weight: bold; color: #222831; background: #eeeeee; padding: 10px; border-radius: 5px; margin: 15px 0; text-align: center; font-family: monospace; }
         
-        /* 長按控制鍵 */
-        .pad-zone { text-align: center; margin: 20px 0; }
+        /* 控制面板 */
+        .pad-zone { text-align: center; margin: 20px 0; background: #2d3436; padding: 15px; border-radius: 8px; }
         #captureBtn { 
-            background: #ff9f43; font-size: 16px; font-weight: bold; padding: 18px 36px; border-radius: 10px; 
-            width: 50%; max-width: 240px; box-shadow: 0 4px 10px rgba(255,159,67,0.4); touch-action: none; 
+            background: #ff9f43; font-size: 16px; font-weight: bold; padding: 15px 30px; border-radius: 10px; 
+            width: 50%; max-width: 240px; box-shadow: 0 4px 10px rgba(255,159,67,0.4); touch-action: none; margin-bottom: 15px;
         }
-        #captureBtn:active { background: #ee5253; transform: scale(0.98); }
+        #captureBtn:active { background: #ee5253; }
+        
+        /* 滑桿樣式 */
+        .slider-container { margin: 10px auto; width: 90%; text-align: center; }
+        .slider-text-row { display: flex; justify-content: space-between; font-size: 14px; color: #ff9f43; font-weight: bold; margin-bottom: 5px; padding: 0 5px; }
+        .my-slider { -webkit-appearance: none; width: 100%; height: 12px; border-radius: 5px; background: #393e46; outline: none; transition: opacity .2s; }
+        .my-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 26px; height: 26px; border-radius: 50%; background: #00adb5; cursor: pointer; }
 
-        /* 儲存格子區 */
-        .save-zone { background: #2d3436; padding: 15px; border-radius: 5px; margin-top: 15px; text-align: center; border: 1px dashed #6c5ce7; }
+        /* 特效區段產生器 */
+        .fx-zone { background: #2d3436; padding: 15px; border-radius: 8px; margin-top: 15px; border: 1px solid #00adb5; }
+        .fx-inputs { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-top: 10px; }
+        .fx-inputs label { font-size: 13px; color: #ccc; }
+        .fx-inputs input { background: #121212; color: white; border: 1px solid #555; padding: 5px; border-radius: 4px; width: 80px; text-align: center; }
+
+        .save-zone { background: #2d3436; padding: 15px; border-radius: 8px; margin-top: 15px; text-align: center; border: 1px dashed #6c5ce7; }
         .slot-group { display: flex; justify-content: space-around; margin-top: 10px; }
-
         .editor-zone { background: #393e46; padding: 15px; border-radius: 5px; margin-top: 20px; }
         .script-list { max-height: 200px; overflow-y: auto; margin-top: 10px; background: #1a1e24; padding: 10px; border-radius: 5px; }
         .script-item { display: flex; align-items: center; justify-content: space-between; background: #2a3038; padding: 6px 12px; margin-bottom: 6px; border-radius: 4px; border-left: 4px solid #00adb5; }
         .script-item input { background: #121212; color: white; border: 1px solid #555; padding: 5px; border-radius: 3px; width: 65px; text-align: center; }
-        
         .log-box { background: #1a1e24; padding: 10px; border-radius: 5px; height: 100px; overflow-y: auto; font-size: 12px; font-family: monospace; margin-top: 15px; color: #a6b1e1; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>扯鈴燈光編排工作站 V3 🎬</h2>
+    <h2>扯鈴燈光編排工作站 V5 🎬</h2>
     <div id="status" class="status">狀態：尚未連接 ESP32</div>
     <div style="text-align: center;"><button id="connectBtn">🔗 連接 ESP32 藍牙</button></div>
     
     <hr style="border-color: #393e46; margin: 15px 0;">
     
-    <h3>1. 控制與播放</h3>
+    <h3>1. 即時控制與播放面板</h3>
     <input type="file" id="audioFile" accept="audio/*" style="margin-bottom: 15px; width: 100%;"><br>
     <audio id="myAudio" controls style="width: 100%; margin-bottom: 10px;"></audio>
     
     <div id="timeDisplay" class="time-display">00:00.00</div>
     
     <div class="pad-zone">
-        <button id="captureBtn">按住：亮 / 放開：滅</button>
+        <button id="captureBtn">按住：全亮 / 放開：全滅</button>
+        
+        <div class="slider-container">
+            <div class="slider-text-row">
+                <span>🎛️ 燈光推桿控制</span>
+                <span style="color:#00adb5;">當前實際亮度: <span id="currentBrightnessVal">0</span></span>
+            </div>
+            <input type="range" min="0" max="255" value="0" class="my-slider" id="brightnessSlider">
+        </div>
+    </div>
+
+    <div class="fx-zone">
+        <h3>✨ 區間線性漸層產生器 (自訂起迄亮度)</h3>
+        <div class="fx-inputs">
+            <div>
+                <label>開始時間 (秒):</label><br>
+                <input type="number" id="fxStart" step="0.1" value="5.0">
+            </div>
+            <div>
+                <label>結束時間 (秒):</label><br>
+                <input type="number" id="fxEnd" step="0.1" value="10.0">
+            </div>
+            <div>
+                <label>開始亮度 (0-255):</label><br>
+                <input type="number" id="brightnessStart" min="0" max="255" value="0">
+            </div>
+            <div>
+                <label>結束亮度 (0-255):</label><br>
+                <input type="number" id="brightnessEnd" min="0" max="255" value="175">
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 12px;">
+            <button id="generateFxBtn" style="background: #00adb5; font-weight: bold; padding: 6px 20px;">⚡ 產生並填滿漸層點</button>
+        </div>
     </div>
 
     <div class="save-zone">
-        <h3>儲存與讀取編排存檔 (永久保留在平板中)</h3>
+        <h3>儲存與讀取編排存檔</h3>
         <div>目前編輯中的劇本點數: <span id="pointCount" style="color:#ff9f43; font-weight:bold;">0</span> 點</div>
         <div class="slot-group">
             <div>
-                <button class="save-slot" onclick="saveToSlot(1)">儲存到 存檔一</button><br>
+                <button class="save-slot" onclick="saveToSlot(1)">儲存至 存檔一</button><br>
                 <button style="background:#2ed573;" onclick="loadFromSlot(1)">讀取 存檔一</button>
             </div>
             <div>
-                <button class="save-slot" onclick="saveToSlot(2)">儲存到 存檔二</button><br>
+                <button class="save-slot" onclick="saveToSlot(2)">儲存至 存檔二</button><br>
                 <button style="background:#2ed573;" onclick="loadFromSlot(2)">讀取 存檔二</button>
             </div>
             <div>
-                <button class="save-slot" onclick="saveToSlot(3)">儲存到 存檔三</button><br>
+                <button class="save-slot" onclick="saveToSlot(3)">儲存至 存檔三</button><br>
                 <button style="background:#2ed573;" onclick="loadFromSlot(3)">讀取 存檔三</button>
             </div>
         </div>
@@ -121,6 +162,18 @@ const clearAllBtn = document.getElementById('clearAllBtn');
 const resetDefaultBtn = document.getElementById('resetDefaultBtn');
 const pointCountSpan = document.getElementById('pointCount');
 
+const brightnessSlider = document.getElementById('brightnessSlider');
+const currentBrightnessVal = document.getElementById('currentBrightnessVal');
+
+const fxStartInput = document.getElementById('fxStart');
+const fxEndInput = document.getElementById('fxEnd');
+const bStartInput = document.getElementById('brightnessStart');
+const bEndInput = document.getElementById('brightnessEnd');
+const generateFxBtn = document.getElementById('generateFxBtn');
+
+// 旗標：用來判斷使用者目前是否「正在用手指操縱滑桿」
+let isUserDraggingSlider = false;
+
 function log(msg) {
     logBox.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
     logBox.scrollTop = logBox.scrollHeight;
@@ -132,7 +185,7 @@ function renderScript() {
     pointCountSpan.innerText = lightScript.length;
     
     if (lightScript.length === 0) {
-        scriptListDiv.innerHTML = '<div style="color:#aaa; text-align:center; padding:20px;">目前沒有任何燈光點，請長按上方按鈕捕捉！</div>';
+        scriptListDiv.innerHTML = '<div style="color:#aaa; text-align:center; padding:20px;">目前沒有任何燈光點，請長按或滑動滑桿捕捉！</div>';
         return;
     }
     
@@ -156,9 +209,7 @@ window.updateNodeTime = (index, value) => { lightScript[index].time = parseFloat
 window.updateNodeBrightness = (index, value) => { lightScript[index].brightness = parseInt(value); };
 window.deleteNode = (index) => { lightScript.splice(index, 1); renderScript(); };
 
-// 💾 存檔格子功能核心
 window.saveToSlot = (slotNumber) => {
-    // 將當前的劇本存入平板的瀏覽器資料庫
     localStorage.setItem(`diabolo_slot_${slotNumber}`, JSON.stringify(lightScript));
     log(`💾 成功將當前編排儲存至 【存檔 ${slotNumber}】`);
     alert(`成功儲存至 存檔 ${slotNumber}！`);
@@ -170,16 +221,41 @@ window.loadFromSlot = (slotNumber) => {
         lightScript = JSON.parse(savedData);
         resetScriptStates();
         renderScript();
-        
-        // 滿足需求：一鍵點選後，將音樂拉回起點從頭播放
         myAudio.currentTime = 0;
         myAudio.play();
-        
-        log(`📥 已成功讀取【存檔 ${slotNumber}】，音樂已重置至 00:00 並開始播放！`);
+        log(`📥 已成功讀取【存檔 ${slotNumber}】，音樂從頭播放！`);
     } else {
-        alert(`【存檔 ${slotNumber}】裡面目前是空的喔，請先進行編排並儲存！`);
+        alert(`【存檔 ${slotNumber}】是空的喔！`);
     }
 };
+
+// 💡 修正後的新功能 1：自訂起迄亮度的線性漸層產生器
+generateFxBtn.addEventListener('click', () => {
+    const startT = parseFloat(fxStartInput.value);
+    const endT = parseFloat(fxEndInput.value);
+    const bStart = parseInt(bStartInput.value);
+    const bEnd = parseInt(bEndInput.value);
+    
+    if (startT >= endT || bStart < 0 || bStart > 255 || bEnd < 0 || bEnd > 255) {
+        alert("請輸入正確的時間區間與亮度範圍 (0-255)！");
+        return;
+    }
+    
+    let generatedPoints = 0;
+    const step = 0.1; // 每 0.1 秒精準插值
+    
+    for (let t = startT; t <= endT; t += step) {
+        // 線性插值公式：目前亮度 = 開始亮度 + (結束亮度 - 開始亮度) * (當前時間比例)
+        const progress = (t - startT) / (endT - startT);
+        const currentBrightness = Math.round(bStart + (bEnd - bStart) * progress);
+        
+        lightScript.push({ time: t, brightness: currentBrightness, executed: false });
+        generatedPoints++;
+    }
+    
+    renderScript();
+    log(`✨ 漸層產生成功！在 ${startT}s 到 ${endT}s 之間，亮度平滑由 ${bStart} 變到 ${bEnd} (共生成 ${generatedPoints} 點)`);
+});
 
 resetDefaultBtn.addEventListener('click', () => {
     lightScript = JSON.parse(JSON.stringify(DEFAULT_SCRIPT));
@@ -209,11 +285,12 @@ audioFile.addEventListener('change', (e) => {
     }
 });
 
-// 🎯 即時操作發送與記錄
+// 即時按鈕控制
 function handlePressStart(e) {
     e.preventDefault(); 
     const currentTime = myAudio.currentTime;
-    sendBrightness(255); // 現場立刻亮（即時預覽）
+    sendBrightness(255);
+    updateSliderUI(255);
     lightScript.push({ time: currentTime, brightness: 255, executed: false }); 
     renderScript();
 }
@@ -221,7 +298,8 @@ function handlePressStart(e) {
 function handlePressEnd(e) {
     e.preventDefault();
     const currentTime = myAudio.currentTime;
-    sendBrightness(0); // 現場立刻滅（即時預覽）
+    sendBrightness(0);
+    updateSliderUI(0);
     lightScript.push({ time: currentTime, brightness: 0, executed: false }); 
     renderScript();
 }
@@ -230,6 +308,38 @@ captureBtn.addEventListener('mousedown', handlePressStart);
 captureBtn.addEventListener('mouseup', handlePressEnd);
 captureBtn.addEventListener('touchstart', handlePressStart);
 captureBtn.addEventListener('touchend', handlePressEnd);
+
+// 💡 修正後的新功能 2：智慧型手操/自動聯動滑桿
+function updateSliderUI(val) {
+    brightnessSlider.value = val;
+    currentBrightnessVal.innerText = val;
+}
+
+// 監聽滑桿觸摸/點擊開始 (切換至手操優先模式)
+const startDrag = () => { isUserDraggingSlider = true; };
+const endDrag = () => { isUserDraggingSlider = false; };
+
+brightnessSlider.addEventListener('mousedown', startDrag);
+brightnessSlider.addEventListener('touchstart', startDrag);
+brightnessSlider.addEventListener('mouseup', endDrag);
+brightnessSlider.addEventListener('touchend', endDrag);
+
+let lastRecordTime = 0;
+brightnessSlider.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value);
+    currentBrightnessVal.innerText = val; // 更新上方文字一排
+    sendBrightness(val);                 // 現場立刻發送給 ESP32
+    
+    // 如果音樂正在播放，就記錄手操軌跡
+    if (!myAudio.paused && !myAudio.ended) {
+        const currentTime = myAudio.currentTime;
+        if (currentTime - lastRecordTime >= 0.1 || currentTime < lastRecordTime) {
+            lightScript.push({ time: currentTime, brightness: val, executed: false });
+            lastRecordTime = currentTime;
+            renderScript();
+        }
+    }
+});
 
 // 藍牙連線
 connectBtn.addEventListener('click', async () => {
@@ -248,7 +358,6 @@ connectBtn.addEventListener('click', async () => {
     }
 });
 
-// 時間軸大腦
 function resetScriptStates() {
     lightScript.forEach(node => node.executed = false);
 }
@@ -269,6 +378,11 @@ function updateTimeline() {
                 node.executed = true;
                 log(`🎬 劇本自動觸發：${node.time.toFixed(2)}s -> 亮度: ${node.brightness}`);
                 sendBrightness(node.brightness);
+                
+                // 【電動推桿關鍵邏輯】：只有在使用者沒有手動去拉它時，滑桿跟文字才會跟著劇本自己動
+                if (!isUserDraggingSlider) {
+                    updateSliderUI(node.brightness);
+                }
             }
         });
     }
