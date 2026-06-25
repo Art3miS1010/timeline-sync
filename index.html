@@ -37,8 +37,9 @@
 
 <script>
 // ----------------- 藍牙設定 (請根據你之前的 ESP32 UUID 修改) -----------------
-const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"; 
-const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+// ----------------- 藍牙設定 (已修改為符合你 ESP32 的標準 UUID) -----------------
+const SERVICE_UUID = "0000181c-0000-1000-8000-00805f9b34fb"; 
+const CHARACTERISTIC_UUID = "00002a56-0000-1000-8000-00805f9b34fb";
 
 let bluetoothDevice = null;
 let txCharacteristic = null;
