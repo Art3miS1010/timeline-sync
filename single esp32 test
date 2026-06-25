@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>扯鈴燈光音樂同步控制台</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; }
+        button { background: #00adb5; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 5px; cursor: pointer; margin: 10px; }
+        button:hover { background: #008c9e; }
+        .container { max-width: 500px; margin: 0 auto; background: #222831; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .status { color: #eee; font-size: 14px; margin-bottom: 20px; }
+        .time-display { font-size: 32px; font-weight: bold; color: #393e46; background: #eeeeee; padding: 10px; border-radius: 5px; margin: 20px 0; font-family: monospace; }
+        .log-box { background: #393e46; padding: 10px; border-radius: 5px; height: 120px; overflow-y: auto; text-align: left; font-size: 12px; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>扯鈴音樂同步控制台 (單機版)</h2>
+    <div id="status" class="status">狀態：尚未連接 ESP32</div>
+    
+    <button id="connectBtn">連接 ESP32 藍牙</button>
+    
+    <hr style="border-color: #393e46; margin: 20px 0;">
+    
+    <h3>1. 載入表演音樂</h3>
+    <input type="file" id="audioFile" accept="audio/*" style="margin-bottom: 15px;"><br>
+    <audio id="myAudio" controls style="width: 100%; display: none;"></audio>
+    
+    <h3>2. 時間軸進度</h3>
+    <div id="timeDisplay" class="time-display">00:00.00</div>
+    
+    <h3>運作日誌</h3>
+    <div id="logBox" class="log-box"></div>
+</div>
+
+<script>
+// ----------------- 藍牙設定 (請根據你之前的 ESP32 UUID 修改) -----------------
+const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"; 
+const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+let bluetoothDevice = null;
+let txCharacteristic = null;
+
+// ----------------- 燈光劇本設定 (測試用) -----------------
+// 這裡時間單位是秒。我們可以精準到小數點。
+const lightScript = [
+    { time: 3.0,  brightness: 255, executed: false, label: "3秒處：全亮爆炸點" },
+    { time: 6.5,  brightness: 50,  executed: false, label: "6.5秒處：音樂變小，燈光變暗" },
+    { time: 10.0, brightness: 0,   executed: false, label: "10秒處：第一個段落結束，全滅" }
+];
+
+// ----------------- UI 元件 -----------------
+const connectBtn = document.getElementById('connectBtn');
+const statusDiv = document.getElementById('status');
+const audioFile = document.getElementById('audioFile');
+const myAudio = document.getElementById('myAudio');
+const timeDisplay = document.getElementById('timeDisplay');
+const logBox = document.getElementById('logBox');
+
+function log(msg) {
+    logBox.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+// ----------------- 藍牙連接邏輯 -----------------
+connectBtn.addEventListener('click', async () => {
+    try {
+        log("正在尋找 ESP32...");
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: [SERVICE_UUID]
+        });
+        
+        statusDiv.innerText = "狀態：正在連接裝置...";
+        const server = await bluetoothDevice.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        txCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+        
+        statusDiv.innerText = `狀態：已連接到 ${bluetoothDevice.name}`;
+        log("藍牙連線成功！可以開始播放音樂。");
+    } catch (error) {
+        log("連線失敗: " + error);
+        statusDiv.innerText = "狀態：連線失敗";
+    }
+});
+
+// ----------------- 音樂檔案載入 -----------------
+audioFile.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        const url = URL.createObjectURL(file);
+        myAudio.src = url;
+        myAudio.style.display = "block";
+        log(`成功載入音樂: ${file.name}`);
+        resetScript(); // 重新載入音樂時，重置劇本執行狀態
+    }
+});
+
+// 重置劇本狀態（當音樂重播或換音樂時）
+function resetScript() {
+    lightScript.forEach(node => node.executed = false);
+    log("燈光劇本狀態已重置。");
+}
+
+myAudio.addEventListener('play', () => { resetScript(); });
+myAudio.addEventListener('seeked', () => { resetScript(); }); // 如果手動拉進度條，也重置
+
+// ----------------- 高精度時間軸監聽大腦 -----------------
+function updateTimeline() {
+    if (!myAudio.paused && !myAudio.ended) {
+        const currentTime = myAudio.currentTime; // 取得當前精確秒數 (例如 3.1425)
+        
+        // 格式化顯示時間 (分:秒.毫秒)
+        const minutes = Math.floor(currentTime / 60);
+        const seconds = Math.floor(currentTime % 60);
+        const milliseconds = Math.floor((currentTime % 1) * 100);
+        timeDisplay.innerText = 
+            `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(2, '0')}`;
+        
+        // 檢查劇本是否有時間點到了
+        lightScript.forEach(node => {
+            // 如果音樂時間大於設定時間，且該節點還沒被執行過
+            if (currentTime >= node.time && !node.executed) {
+                node.executed = true; // 標記為已執行，避免重複發送
+                log(`觸發劇本 → ${node.label} (設定: ${node.time}s, 實際: ${currentTime.toFixed(3)}s)`);
+                sendBrightness(node.brightness);
+            }
+        });
+    }
+    // 只要音樂在播，就持續用螢幕刷新率（最高精度）追蹤時間
+    requestAnimationFrame(updateTimeline);
+}
+
+// 監聽音樂播放事件，啟動高精度追蹤
+myAudio.addEventListener('play', () => {
+    requestAnimationFrame(updateTimeline);
+});
+
+// ----------------- 發送資料給 ESP32 -----------------
+async function sendBrightness(value) {
+    if (!txCharacteristic) {
+        log(`⚠️ 藍牙未連接，攔截到發送訊號：${value}`);
+        return;
+    }
+    try {
+        const data = new Uint8Array([value]);
+        await txCharacteristic.writeValue(data);
+        log(`▶️ 已成功發送亮度：${value}`);
+    } catch (error) {
+        log(`❌ 發送失敗: ${error}`);
+    }
+}
+</script>
+
+</body>
+</html>
