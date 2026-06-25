@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>扯鈴燈光編排工作站 V5</title>
+    <title>扯鈴燈光編排工作站 V5.1</title>
     <style>
         body { font-family: 'PingFang TC', sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; user-select: none; }
         button { background: #00adb5; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 5px; cursor: pointer; margin: 5px; transition: 0.2s; }
@@ -49,7 +49,7 @@
 <body>
 
 <div class="container">
-    <h2>扯鈴燈光編排工作站 V5 🎬</h2>
+    <h2>扯鈴燈光編排工作站 V5.1 🎬</h2>
     <div id="status" class="status">狀態：尚未連接 ESP32</div>
     <div style="text-align: center;"><button id="connectBtn">🔗 連接 ESP32 藍牙</button></div>
     
@@ -171,8 +171,15 @@ const bStartInput = document.getElementById('brightnessStart');
 const bEndInput = document.getElementById('brightnessEnd');
 const generateFxBtn = document.getElementById('generateFxBtn');
 
-// 旗標：用來判斷使用者目前是否「正在用手指操縱滑桿」
 let isUserDraggingSlider = false;
+
+// 💡 用於最佳化手操紀錄的核心暫存變數
+let lastRecordTime = 0;
+let lastRecordBrightness = -1; 
+
+// 💡 藍牙動態節流控制鎖 (Throttle)
+let bluetoothThrottleTimeout = null;
+let lastSentBrightness = -1;
 
 function log(msg) {
     logBox.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
@@ -229,7 +236,7 @@ window.loadFromSlot = (slotNumber) => {
     }
 };
 
-// 💡 修正後的新功能 1：自訂起迄亮度的線性漸層產生器
+// 區間線性漸層產生器
 generateFxBtn.addEventListener('click', () => {
     const startT = parseFloat(fxStartInput.value);
     const endT = parseFloat(fxEndInput.value);
@@ -242,10 +249,9 @@ generateFxBtn.addEventListener('click', () => {
     }
     
     let generatedPoints = 0;
-    const step = 0.1; // 每 0.1 秒精準插值
+    const step = 0.1;
     
     for (let t = startT; t <= endT; t += step) {
-        // 線性插值公式：目前亮度 = 開始亮度 + (結束亮度 - 開始亮度) * (當前時間比例)
         const progress = (t - startT) / (endT - startT);
         const currentBrightness = Math.round(bStart + (bEnd - bStart) * progress);
         
@@ -289,18 +295,20 @@ audioFile.addEventListener('change', (e) => {
 function handlePressStart(e) {
     e.preventDefault(); 
     const currentTime = myAudio.currentTime;
-    sendBrightness(255);
+    sendBrightnessThrottled(255);
     updateSliderUI(255);
     lightScript.push({ time: currentTime, brightness: 255, executed: false }); 
+    lastRecordBrightness = 255; // 同步狀態
     renderScript();
 }
 
 function handlePressEnd(e) {
     e.preventDefault();
     const currentTime = myAudio.currentTime;
-    sendBrightness(0);
+    sendBrightnessThrottled(0);
     updateSliderUI(0);
     lightScript.push({ time: currentTime, brightness: 0, executed: false }); 
+    lastRecordBrightness = 0; // 同步狀態
     renderScript();
 }
 
@@ -309,13 +317,11 @@ captureBtn.addEventListener('mouseup', handlePressEnd);
 captureBtn.addEventListener('touchstart', handlePressStart);
 captureBtn.addEventListener('touchend', handlePressEnd);
 
-// 💡 修正後的新功能 2：智慧型手操/自動聯動滑桿
 function updateSliderUI(val) {
     brightnessSlider.value = val;
     currentBrightnessVal.innerText = val;
 }
 
-// 監聽滑桿觸摸/點擊開始 (切換至手操優先模式)
 const startDrag = () => { isUserDraggingSlider = true; };
 const endDrag = () => { isUserDraggingSlider = false; };
 
@@ -324,19 +330,25 @@ brightnessSlider.addEventListener('touchstart', startDrag);
 brightnessSlider.addEventListener('mouseup', endDrag);
 brightnessSlider.addEventListener('touchend', endDrag);
 
-let lastRecordTime = 0;
 brightnessSlider.addEventListener('input', (e) => {
     const val = parseInt(e.target.value);
-    currentBrightnessVal.innerText = val; // 更新上方文字一排
-    sendBrightness(val);                 // 現場立刻發送給 ESP32
+    currentBrightnessVal.innerText = val;
     
-    // 如果音樂正在播放，就記錄手操軌跡
+    // 💡 優化點二：使用節流發送，徹底解決藍牙拉動卡頓延遲
+    sendBrightnessThrottled(val);
+    
     if (!myAudio.paused && !myAudio.ended) {
         const currentTime = myAudio.currentTime;
+        
+        // 💡 優化點一：只有在「時間過0.1秒」且「亮度跟上一次不一樣」時才紀錄
+        // 這樣既保留了手拉0-255的所有精細變化，又不會在手指停住時塞爆重複的點！
         if (currentTime - lastRecordTime >= 0.1 || currentTime < lastRecordTime) {
-            lightScript.push({ time: currentTime, brightness: val, executed: false });
-            lastRecordTime = currentTime;
-            renderScript();
+            if (val !== lastRecordBrightness) {
+                lightScript.push({ time: currentTime, brightness: val, executed: false });
+                lastRecordBrightness = val;
+                lastRecordTime = currentTime;
+                renderScript();
+            }
         }
     }
 });
@@ -377,9 +389,10 @@ function updateTimeline() {
             if (currentTime >= node.time && !node.executed) {
                 node.executed = true;
                 log(`🎬 劇本自動觸發：${node.time.toFixed(2)}s -> 亮度: ${node.brightness}`);
-                sendBrightness(node.brightness);
                 
-                // 【電動推桿關鍵邏輯】：只有在使用者沒有手動去拉它時，滑桿跟文字才會跟著劇本自己動
+                // 劇本自動跑時也透過節流防護
+                sendBrightnessThrottled(node.brightness);
+                
                 if (!isUserDraggingSlider) {
                     updateSliderUI(node.brightness);
                 }
@@ -390,13 +403,40 @@ function updateTimeline() {
 }
 myAudio.addEventListener('play', () => { requestAnimationFrame(updateTimeline); });
 
-async function sendBrightness(value) {
+// 💡 優化點二：動態智慧藍牙節流函式（冷卻時間鎖 40ms）
+function sendBrightnessThrottled(value) {
+    if (!txCharacteristic) return;
+    
+    // 如果值沒變，直接跳過不送，節省頻寬
+    if (value === lastSentBrightness) return;
+    
+    // 如果目前正處在 40ms 的冷卻時間內，就先攔截，等計時器到
+    if (bluetoothThrottleTimeout) {
+        lastSentBrightness = value; // 保持最新值
+        return;
+    }
+    
+    // 沒鎖定時，立刻發送
+    executeBluetoothSend(value);
+    
+    // 開啟 40ms 冷卻鎖
+    bluetoothThrottleTimeout = setTimeout(() => {
+        bluetoothThrottleTimeout = null;
+        // 冷卻結束後，如果使用者在這段期間有拉到新位置，立刻補發最新狀態
+        if (lastSentBrightness !== value) {
+            executeBluetoothSend(brightnessSlider.value);
+        }
+    }, 40); 
+}
+
+async function executeBluetoothSend(value) {
     if (!txCharacteristic) return;
     try {
         const data = new Uint8Array([value]);
         await txCharacteristic.writeValue(data);
+        lastSentBrightness = value;
     } catch (error) {
-        log(`❌ 發送失敗: ${error}`);
+        // 降低日誌洗板率
     }
 }
 
