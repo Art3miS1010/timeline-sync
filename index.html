@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>扯鈴燈光編排工作站 V5.1</title>
+    <title>扯鈴燈光編排工作站 V5.2</title>
     <style>
         body { font-family: 'PingFang TC', sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; margin: 0; user-select: none; }
         button { background: #00adb5; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 5px; cursor: pointer; margin: 5px; transition: 0.2s; }
@@ -17,16 +17,26 @@
         .status { text-align: center; color: #eee; font-size: 14px; margin-bottom: 15px; }
         .time-display { font-size: 40px; font-weight: bold; color: #222831; background: #eeeeee; padding: 10px; border-radius: 5px; margin: 15px 0; text-align: center; font-family: monospace; }
         
-        /* 控制面板 */
+        /* 💡 修正：全新雙鈕區塊樣式 */
         .pad-zone { text-align: center; margin: 20px 0; background: #2d3436; padding: 15px; border-radius: 8px; }
+        .btn-split-row { display: flex; justify-content: space-between; gap: 15px; margin-bottom: 20px; }
+        
+        /* 左邊鎖定鈕 */
+        #lockBtn { 
+            flex: 1; background: #55efc4; color: #2d3436; font-size: 16px; font-weight: bold; padding: 15px; 
+            border-radius: 10px; box-shadow: 0 4px 10px rgba(85,239,196,0.2); touch-action: none; transition: 0.1s;
+        }
+        #lockBtn.active { background: #00b894; color: white; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); }
+        
+        /* 右邊瞬閃鈕 */
         #captureBtn { 
-            background: #ff9f43; font-size: 16px; font-weight: bold; padding: 15px 30px; border-radius: 10px; 
-            width: 50%; max-width: 240px; box-shadow: 0 4px 10px rgba(255,159,67,0.4); touch-action: none; margin-bottom: 15px;
+            flex: 1; background: #ff9f43; font-size: 16px; font-weight: bold; padding: 15px; 
+            border-radius: 10px; box-shadow: 0 4px 10px rgba(255,159,67,0.3); touch-action: none; 
         }
         #captureBtn:active { background: #ee5253; }
         
         /* 滑桿樣式 */
-        .slider-container { margin: 10px auto; width: 90%; text-align: center; }
+        .slider-container { margin: 10px auto; width: 95%; text-align: center; }
         .slider-text-row { display: flex; justify-content: space-between; font-size: 14px; color: #ff9f43; font-weight: bold; margin-bottom: 5px; padding: 0 5px; }
         .my-slider { -webkit-appearance: none; width: 100%; height: 12px; border-radius: 5px; background: #393e46; outline: none; transition: opacity .2s; }
         .my-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 26px; height: 26px; border-radius: 50%; background: #00adb5; cursor: pointer; }
@@ -49,7 +59,7 @@
 <body>
 
 <div class="container">
-    <h2>扯鈴燈光編排工作站 V5.1 🎬</h2>
+    <h2>扯鈴燈光編排工作站 V5.2 🎬</h2>
     <div id="status" class="status">狀態：尚未連接 ESP32</div>
     <div style="text-align: center;"><button id="connectBtn">🔗 連接 ESP32 藍牙</button></div>
     
@@ -62,7 +72,10 @@
     <div id="timeDisplay" class="time-display">00:00.00</div>
     
     <div class="pad-zone">
-        <button id="captureBtn">按住：全亮 / 放開：全滅</button>
+        <div class="btn-split-row">
+            <button id="lockBtn">🔓 鎖定全亮 (255)</button>
+            <button id="captureBtn">按住：全亮 / 放開：全滅</button>
+        </div>
         
         <div class="slider-container">
             <div class="slider-text-row">
@@ -157,6 +170,7 @@ const timeDisplay = document.getElementById('timeDisplay');
 const logBox = document.getElementById('logBox');
 const scriptListDiv = document.getElementById('scriptList');
 const captureBtn = document.getElementById('captureBtn');
+const lockBtn = document.getElementById('lockBtn');
 const exportBtn = document.getElementById('exportBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
 const resetDefaultBtn = document.getElementById('resetDefaultBtn');
@@ -172,12 +186,12 @@ const bEndInput = document.getElementById('brightnessEnd');
 const generateFxBtn = document.getElementById('generateFxBtn');
 
 let isUserDraggingSlider = false;
+let isRightBtnActive = false; // 紀錄右邊按鈕是否正被按著
+let isLocked255 = false;      // 💡 紀錄目前是否處於 255 鎖定狀態
 
-// 💡 用於最佳化手操紀錄的核心暫存變數
 let lastRecordTime = 0;
 let lastRecordBrightness = -1; 
 
-// 💡 藍牙動態節流控制鎖 (Throttle)
 let bluetoothThrottleTimeout = null;
 let lastSentBrightness = -1;
 
@@ -291,24 +305,39 @@ audioFile.addEventListener('change', (e) => {
     }
 });
 
-// 即時按鈕控制
+// 💡 智慧型雙鈕核心邏輯
 function handlePressStart(e) {
     e.preventDefault(); 
+    isRightBtnActive = true;
+    
+    // 如果本來已經被左邊鎖定了，點右邊就代表重新接管，取消鎖定狀態
+    if (isLocked255) {
+        cancelLockState();
+    }
+    
     const currentTime = myAudio.currentTime;
     sendBrightnessThrottled(255);
     updateSliderUI(255);
     lightScript.push({ time: currentTime, brightness: 255, executed: false }); 
-    lastRecordBrightness = 255; // 同步狀態
+    lastRecordBrightness = 255;
     renderScript();
 }
 
 function handlePressEnd(e) {
     e.preventDefault();
+    isRightBtnActive = false;
+    
+    // 關鍵：如果放開時，左邊的鎖定已經被啟動，那就不執行「放開全滅」！讓它繼續亮著
+    if (isLocked255) {
+        log("🔒 檢測到鎖定狀態激活，右鈕放開不熄滅。");
+        return;
+    }
+    
     const currentTime = myAudio.currentTime;
     sendBrightnessThrottled(0);
     updateSliderUI(0);
     lightScript.push({ time: currentTime, brightness: 0, executed: false }); 
-    lastRecordBrightness = 0; // 同步狀態
+    lastRecordBrightness = 0;
     renderScript();
 }
 
@@ -317,13 +346,62 @@ captureBtn.addEventListener('mouseup', handlePressEnd);
 captureBtn.addEventListener('touchstart', handlePressStart);
 captureBtn.addEventListener('touchend', handlePressEnd);
 
+// 💡 左邊鎖定鈕點擊事件
+function handleLockClick(e) {
+    e.preventDefault();
+    const currentTime = myAudio.currentTime;
+    
+    if (!isLocked255) {
+        // 只有在右邊按鈕正按著、或是滑桿正處於高亮度時允許鎖定 (或者任何你想強制鎖定的時候)
+        isLocked255 = true;
+        lockBtn.innerText = "🔒 已鎖定全亮";
+        lockBtn.classList.add('active');
+        
+        sendBrightnessThrottled(255);
+        updateSliderUI(255);
+        
+        // 如果是在播音樂時點，幫忙追加一個確定的 255 鎖定關鍵影格
+        if (!myAudio.paused && !myAudio.ended) {
+            lightScript.push({ time: currentTime, brightness: 255, executed: false });
+            lastRecordBrightness = 255;
+            renderScript();
+        }
+        log(`🔒 鎖定 255 成功！此時放開右鈕不會熄滅，可直接進行滑桿遞減。`);
+    } else {
+        cancelLockState();
+        // 取消鎖定時，立刻回歸 0（除非右鈕還按著）
+        if (!isRightBtnActive) {
+            sendBrightnessThrottled(0);
+            updateSliderUI(0);
+            if (!myAudio.paused && !myAudio.ended) {
+                lightScript.push({ time: currentTime, brightness: 0, executed: false });
+                lastRecordBrightness = 0;
+                renderScript();
+            }
+        }
+    }
+}
+
+function cancelLockState() {
+    isLocked255 = false;
+    lockBtn.innerText = "🔓 鎖定全亮 (255)";
+    lockBtn.classList.remove('active');
+    log("🔓 已解除鎖定狀態。");
+}
+
+lockBtn.addEventListener('click', handleLockClick);
+lockBtn.addEventListener('touchstart', (e) => { e.preventDefault(); handleLockClick(e); });
+
+
 function updateSliderUI(val) {
     brightnessSlider.value = val;
     currentBrightnessVal.innerText = val;
 }
 
 const startDrag = () => { isUserDraggingSlider = true; };
-const endDrag = () => { isUserDraggingSlider = false; };
+const endDrag = () => { 
+    isUserDraggingSlider = false; 
+};
 
 brightnessSlider.addEventListener('mousedown', startDrag);
 brightnessSlider.addEventListener('touchstart', startDrag);
@@ -334,14 +412,17 @@ brightnessSlider.addEventListener('input', (e) => {
     const val = parseInt(e.target.value);
     currentBrightnessVal.innerText = val;
     
-    // 💡 優化點二：使用節流發送，徹底解決藍牙拉動卡頓延遲
+    // 如果使用者去拉滑桿，且此時低於 255，就自動把鎖定解開，符合直覺
+    if (isLocked255 && val < 255) {
+        isLocked255 = false;
+        lockBtn.innerText = "🔓 鎖定全亮 (255)";
+        lockBtn.classList.remove('active');
+    }
+    
     sendBrightnessThrottled(val);
     
     if (!myAudio.paused && !myAudio.ended) {
         const currentTime = myAudio.currentTime;
-        
-        // 💡 優化點一：只有在「時間過0.1秒」且「亮度跟上一次不一樣」時才紀錄
-        // 這樣既保留了手拉0-255的所有精細變化，又不會在手指停住時塞爆重複的點！
         if (currentTime - lastRecordTime >= 0.1 || currentTime < lastRecordTime) {
             if (val !== lastRecordBrightness) {
                 lightScript.push({ time: currentTime, brightness: val, executed: false });
@@ -390,11 +471,16 @@ function updateTimeline() {
                 node.executed = true;
                 log(`🎬 劇本自動觸發：${node.time.toFixed(2)}s -> 亮度: ${node.brightness}`);
                 
-                // 劇本自動跑時也透過節流防護
                 sendBrightnessThrottled(node.brightness);
                 
                 if (!isUserDraggingSlider) {
                     updateSliderUI(node.brightness);
+                    // 劇本若自動跑到非255點，也重置鎖定鈕外觀
+                    if (node.brightness < 255 && isLocked255) {
+                        isLocked255 = false;
+                        lockBtn.innerText = "🔓 鎖定全亮 (255)";
+                        lockBtn.classList.remove('active');
+                    }
                 }
             }
         });
@@ -403,26 +489,16 @@ function updateTimeline() {
 }
 myAudio.addEventListener('play', () => { requestAnimationFrame(updateTimeline); });
 
-// 💡 優化點二：動態智慧藍牙節流函式（冷卻時間鎖 40ms）
 function sendBrightnessThrottled(value) {
     if (!txCharacteristic) return;
-    
-    // 如果值沒變，直接跳過不送，節省頻寬
     if (value === lastSentBrightness) return;
-    
-    // 如果目前正處在 40ms 的冷卻時間內，就先攔截，等計時器到
     if (bluetoothThrottleTimeout) {
-        lastSentBrightness = value; // 保持最新值
+        lastSentBrightness = value;
         return;
     }
-    
-    // 沒鎖定時，立刻發送
     executeBluetoothSend(value);
-    
-    // 開啟 40ms 冷卻鎖
     bluetoothThrottleTimeout = setTimeout(() => {
         bluetoothThrottleTimeout = null;
-        // 冷卻結束後，如果使用者在這段期間有拉到新位置，立刻補發最新狀態
         if (lastSentBrightness !== value) {
             executeBluetoothSend(brightnessSlider.value);
         }
@@ -435,9 +511,7 @@ async function executeBluetoothSend(value) {
         const data = new Uint8Array([value]);
         await txCharacteristic.writeValue(data);
         lastSentBrightness = value;
-    } catch (error) {
-        // 降低日誌洗板率
-    }
+    } catch (error) {}
 }
 
 renderScript();
